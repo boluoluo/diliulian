@@ -1,0 +1,117 @@
+package com.diliulian.platform.service.quartz.impl;
+
+import java.util.Date;
+import java.util.List;
+
+import javax.annotation.PostConstruct;
+
+import org.quartz.SchedulerException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.diliulian.framework.quartz.SchedulerFactory;
+import com.diliulian.platform.entity.AjaxJson;
+import com.diliulian.platform.entity.DataGrid;
+import com.diliulian.platform.entity.quartz.ScheduleJobEntity;
+import com.diliulian.platform.mapper.quartz.ScheduleJobMapper;
+import com.diliulian.platform.service.BaseService;
+import com.diliulian.platform.service.quartz.ScheduleJobService;
+import com.github.pagehelper.PageInfo;
+
+/**
+ * @ClassName: ScheduleJobServiceImpl
+ * @Description:
+ * @author 唐亚峰
+ * @date 2016年11月18日
+ */
+@Service
+public class ScheduleJobServiceImpl extends BaseService<ScheduleJobEntity> implements ScheduleJobService
+{
+	public final Logger log = LoggerFactory.getLogger(this.getClass());
+
+	@Autowired
+	private SchedulerFactory schedulerFactory;
+	
+	@Autowired
+	private ScheduleJobMapper scheduleJobMapper;
+
+	@Override
+	public PageInfo<ScheduleJobEntity> queryScheduleJobForList(DataGrid grid)
+	{
+		return super.queryForDataGrid(grid);
+	}
+
+	@Override
+	public AjaxJson saveOrUpdate(ScheduleJobEntity entity) throws SchedulerException
+	{
+		AjaxJson json = new AjaxJson();
+		if (entity.getId() != null)
+		{
+			ScheduleJobEntity jobEntity = selectByPrimaryKey(entity.getId());
+			jobEntity.setCronExpression(entity.getCronExpression());
+			// 修改
+			scheduleJobMapper.updateByPrimaryKeySelective(jobEntity);
+			schedulerFactory.updateJobCron(jobEntity);
+		} else
+		{
+			// 添加
+			entity.setCreateTime(new Date());
+			scheduleJobMapper.insertSelective(entity);
+			schedulerFactory.addJob(entity);
+		}
+		json.setSuccess(true);
+		json.setMsg("保存成功！");
+		return json;
+	}
+
+	@Override
+	public ScheduleJobEntity selectByPrimaryKey(Integer id)
+	{
+		return super.selectByPrimaryKey(id);
+	}
+
+	@Override
+	public AjaxJson updateJobState(Integer id, String cmd) throws SchedulerException
+	{
+		AjaxJson json = new AjaxJson();
+		ScheduleJobEntity job = selectByPrimaryKey(id);
+		if (job == null)
+		{
+			json.setMsg("未找到该任务!!!");
+		} else
+		{
+			if ("stop".equals(cmd))
+			{
+				schedulerFactory.deleteJob(job);
+				job.setJobStatus(ScheduleJobEntity.STATUS_NOT_RUNNING);
+			} else if ("start".equals(cmd))
+			{
+				job.setJobStatus(ScheduleJobEntity.STATUS_RUNNING);
+				schedulerFactory.addJob(job);
+			}
+			scheduleJobMapper.updateByPrimaryKeySelective(job);
+		}
+		json.setSuccess(true);
+		return json;
+	}
+	
+	
+	@PostConstruct
+	public void init() throws Exception
+	{
+		// 这里获取任务信息数据
+		List<ScheduleJobEntity> lists = this.scheduleJobMapper.selectAll();
+		if (lists != null && lists.size() > 0)
+		{
+			for (ScheduleJobEntity job : lists)
+			{
+				schedulerFactory.addJob(job);
+			}
+		}
+	}
+
+	
+
+}
